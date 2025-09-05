@@ -1,5 +1,5 @@
 from sklearn.ensemble import IsolationForest    
-import pandas as pd
+import pandas as pd 
 import numpy as np 
 from sklearn.compose import ColumnTransformer 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
