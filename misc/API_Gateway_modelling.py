@@ -1,7 +1,7 @@
 from sklearn.ensemble import IsolationForest
 import pandas as pd
 import numpy as np 
-from sklearn.compose import ColumnTransformer
+from sklearn.compose import ColumnTransformer 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline 
 df=pd.read_csv(r"C:\Users\SarthakMohapatra\Desktop\sarthak_dev_code\misc\api_dataset.csv")
