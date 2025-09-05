@@ -1,6 +1,6 @@
 from sklearn.ensemble import IsolationForest
 import pandas as pd
-import numpy as np
+import numpy as np 
 from sklearn.compose import ColumnTransformer
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.pipeline import Pipeline 
