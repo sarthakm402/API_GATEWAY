@@ -1,7 +1,7 @@
 import pandas as pd
 import numpy as np 
 np.random.seed(32) 
-n=50000   
+n=50000    
 df=pd.DataFrame({
 "endpoint":np.random.choice(["/login","/purchase","/get-user","/matrics"],n),
 "method":np.random.choice(["GET","POST"],n),
