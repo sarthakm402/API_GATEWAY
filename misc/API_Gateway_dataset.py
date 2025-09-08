@@ -8,7 +8,7 @@ df=pd.DataFrame({
 "payload_size":np.random.randint(50,2000,n),
 "response_time":np.random.randint(n)*2,
 "status_code":np.random.choice([200,400,401,404,500],n,p=[0.9,0.02,0.02,0.03,0.03])
-})
+}) 
 index=np.random.choice(df.index,1000,replace=False)
 df.loc[index,"payload_size"]*=20
 df.loc[index,"response_time"]*=10
