@@ -7,9 +7,10 @@ from sklearn.pipeline import Pipeline
 from fastapi import FastAPI, Query, Path, Body
 from pydantic import BaseModel
 from typing import Dict, Any, Tuple, Optional
+import matplotlib.pyplot as plt
 
 # ------------------ ML Model Setup ------------------
-df = pd.read_csv(r"C:\Users\SarthakMohapatra\Desktop\sarthak_dev_code\misc\api_dataset.csv")
+df = pd.read_csv(r"C:\Users\sarthak mohapatra\Desktop\vs ml  course code\API_GATEWAY\misc\api_dataset.csv")
 iso = IsolationForest(
     n_estimators=500,
     contamination=0.1,
@@ -23,6 +24,11 @@ preprocessor = ColumnTransformer(transformers=[
 ])
 X = preprocessor.fit_transform(df)
 iso.fit(X)
+iso.predict(X)
+scores = iso.decision_function(X)  # lower = more anomalous
+plt.hist(scores, bins=50)
+plt.title("Isolation Forest anomaly score distribution")
+plt.show()
 
 # ------------------ Validation Rules ------------------
 VALID_ENDPOINTS = ["/login", "/purchase", "/get-user", "/metrics"]
