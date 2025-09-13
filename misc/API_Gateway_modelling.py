@@ -3,7 +3,7 @@ import pandas as pd
 import numpy as np  
 from sklearn.compose import ColumnTransformer 
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
-from sklearn.pipeline import Pipeline 
+from sklearn.pipeline import Pipeline  
 from fastapi import FastAPI, Query, Path, Body
 from pydantic import BaseModel
 from typing import Dict, Any, Tuple, Optional
