@@ -213,9 +213,9 @@ class Request(BaseModel):
 def prediction(df):
     global iso_model,preprocessor
     transformed_df=preprocessor.transform(df)
-    preds=iso_model.predict(transformed_df)[0]
+    preds=iso_model.predict(transformed_df)
     # Map -1 → 1 (anomaly), 1 → 0 (normal)
-    return 1 if preds==-1 else 0
+    return [1 if p==-1 else 0 for p in preds]
 app=FastAPI()
 @app.on_event("startup")
 def startup_event():
@@ -225,9 +225,27 @@ def status():
     global iso_model,preprocessor
     return {'status':"Running","model_loaded":preprocessor is not None and iso_model is not None}
 @app.post('/validate/{user_id}')
-async def predict(id:int=Path(...,description="The requester_id path"),
+async def predict(user_id:int=Path(...,description="The requester_id path"),
                   data:Request=Body(...,description="Required data for validation"),
                   verbose:Optional[bool]=Query(False,description="any verbose required")):
     df_test=pd.DataFrame([data.dict()])
     is_anomaly=prediction(df_test)
-    
+    df_test["timestamp"]=pd.Timestamp.now()
+    df_test["user"]=user_id
+    if os.path.exists(REQUEST_LOGS):
+        old_df=pd.read_csv(REQUEST_LOGS)
+        full_df=pd.concat([old_df,df_test],ignore_index=True)
+    else:
+        full_df=df_test
+        full_df.to_csv(REQUEST_LOGS,index=False)
+        if len(full_df)>=THRESH:
+            retrain()
+    response={
+        "user_id":user_id,
+        "anomaly":is_anomaly,
+        "data":data.dict()
+    }
+    return response      
+
+
+
