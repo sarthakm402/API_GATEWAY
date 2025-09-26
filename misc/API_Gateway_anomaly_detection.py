@@ -125,7 +125,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from pydantic import BaseModel
 from typing import Optional
-import matplotlib.pyplot as plt
+from API_Gateway_enpoint_documentation import document_router
 
 REQUEST_LOGS = "request.csv"
 HISTORY_LOGS = "history.csv"#if available
@@ -173,6 +173,8 @@ def retrain():
         os.remove(REQUEST_LOGS)
         print("Updated history logs after retraining.")
     elif os.path.exists(HISTORY_LOGS):
+        """THIS IS INCASE OF NO NEW REQUEST LOGS AND  NO MODEL THERE 
+        DUE TO CRASH WHICH MAY RESULT IN NO TRAINING """
         df_history = pd.read_csv(HISTORY_LOGS)
         train_from_df(df_history)
     elif os.path.exists(REQUEST_LOGS):
@@ -204,8 +206,7 @@ def load_artifacts():
 
     # Case 2: No model yet
     else:
-        if os.path.exists(REQUEST_LOGS):
-         retrain()
+        retrain()
         if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
             preprocessor = load(PREPROCESSOR_PATH)
             iso_model = load(MODEL_PATH)
@@ -229,7 +230,7 @@ def prediction(df):
     return [1 if p==-1 else 0 for p in preds]
 
 app=FastAPI()
-
+app.include_router(document_router)
 @app.on_event("startup")
 def startup_event():
     load_artifacts()  
