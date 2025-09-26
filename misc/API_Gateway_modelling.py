@@ -116,16 +116,15 @@
 
 
 ###### MORE GENERALISED API ANOMALY DETECTION########
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Query, Path, Body
 import os
 import pandas as pd
 from joblib import dump, load
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
-from fastapi import FastAPI, Query, Path, Body
 from pydantic import BaseModel
-from typing import Dict, Any, Tuple, Optional
+from typing import Optional
 import matplotlib.pyplot as plt
 
 REQUEST_LOGS = "request.csv"
@@ -176,14 +175,23 @@ def retrain():
     elif os.path.exists(HISTORY_LOGS):
         df_history = pd.read_csv(HISTORY_LOGS)
         train_from_df(df_history)
+    elif os.path.exists(REQUEST_LOGS):
+        df3=pd.read_csv(REQUEST_LOGS)
+        train_from_df(df3)
+        df3.to_csv(HISTORY_LOGS,index=False)
     else:
         print("No data available to train.")
+
+def maybe_retrain(df):
+    # helper to check retrain threshold
+    if len(df) >= THRESH:
+        retrain()
 
 def load_artifacts():
     global preprocessor, iso_model
     # Case 1: Model exists 
     if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
-        # Check agr reqst logsd thresh sei upar hai
+        # Check agr reqst logs thresh sei upar hai
         if os.path.exists(REQUEST_LOGS):
             df2 = pd.read_csv(REQUEST_LOGS)
             if len(df2) >= THRESH:
@@ -196,7 +204,8 @@ def load_artifacts():
 
     # Case 2: No model yet
     else:
-        retrain()
+        if os.path.exists(REQUEST_LOGS):
+         retrain()
         if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
             preprocessor = load(PREPROCESSOR_PATH)
             iso_model = load(MODEL_PATH)
@@ -204,48 +213,54 @@ def load_artifacts():
         else:
             print("Model could not be loaded or trained.")
             return False
-class Request(BaseModel):
+
+class RequestData(BaseModel):  
     endpoint:str
     method:str
     payload_size:int
     response_time:int
     status_code:int
+
 def prediction(df):
     global iso_model,preprocessor
     transformed_df=preprocessor.transform(df)
     preds=iso_model.predict(transformed_df)
     # Map -1 → 1 (anomaly), 1 → 0 (normal)
     return [1 if p==-1 else 0 for p in preds]
+
 app=FastAPI()
+
 @app.on_event("startup")
 def startup_event():
-    load_artifacts
+    load_artifacts()  
+
 @app.get('/')
 def status():
     global iso_model,preprocessor
     return {'status':"Running","model_loaded":preprocessor is not None and iso_model is not None}
+
 @app.post('/validate/{user_id}')
 async def predict(user_id:int=Path(...,description="The requester_id path"),
-                  data:Request=Body(...,description="Required data for validation"),
+                  data:RequestData=Body(...,description="Required data for validation"),
                   verbose:Optional[bool]=Query(False,description="any verbose required")):
     df_test=pd.DataFrame([data.dict()])
     is_anomaly=prediction(df_test)
     df_test["timestamp"]=pd.Timestamp.now()
     df_test["user"]=user_id
+
+    # Save or append to request logs
     if os.path.exists(REQUEST_LOGS):
         old_df=pd.read_csv(REQUEST_LOGS)
         full_df=pd.concat([old_df,df_test],ignore_index=True)
     else:
         full_df=df_test
-        full_df.to_csv(REQUEST_LOGS,index=False)
-        if len(full_df)>=THRESH:
-            retrain()
+
+    full_df.to_csv(REQUEST_LOGS,index=False) 
+    maybe_retrain(full_df)
+
     response={
         "user_id":user_id,
         "anomaly":is_anomaly,
         "data":data.dict()
     }
-    return response      
-
-
-
+    return response
