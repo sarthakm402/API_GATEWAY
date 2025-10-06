@@ -126,7 +126,7 @@ from sklearn.compose import ColumnTransformer
 from pydantic import BaseModel
 from typing import Optional
 from API_Gateway_enpoint_documentation import document_router
-
+from query_routing import query_router
 REQUEST_LOGS = "request.csv"
 HISTORY_LOGS = "history.csv"#if available
 PREPROCESSOR_PATH = "preprocessor.joblib"
@@ -231,6 +231,7 @@ def prediction(df):
 
 app=FastAPI()
 app.include_router(document_router)
+app.include_router(query_router)
 @app.on_event("startup")
 def startup_event():
     load_artifacts()  
@@ -239,6 +240,7 @@ def startup_event():
 def status():
     global iso_model,preprocessor
     return {'status':"Running","model_loaded":preprocessor is not None and iso_model is not None}
+
 
 @app.post('/validate/{user_id}')
 async def predict(user_id:int=Path(...,description="The requester_id path"),
