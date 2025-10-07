@@ -116,8 +116,9 @@
 
 
 ###### MORE GENERALISED API ANOMALY DETECTION########
-from fastapi import FastAPI, Query, Path, Body
+from fastapi import FastAPI, Query, Path, Body, HTTPException
 import os
+import threading
 import pandas as pd
 from joblib import dump, load
 from sklearn.ensemble import IsolationForest
@@ -127,8 +128,10 @@ from pydantic import BaseModel
 from typing import Optional
 from API_Gateway_enpoint_documentation import document_router
 from query_routing import query_router
+
+# ---------------- Paths and constants ----------------
 REQUEST_LOGS = "request.csv"
-HISTORY_LOGS = "history.csv"#if available
+HISTORY_LOGS = "history.csv"  # if available
 PREPROCESSOR_PATH = "preprocessor.joblib"
 MODEL_PATH = "iso_model.joblib"
 THRESH = 100
@@ -137,10 +140,14 @@ CONTAMINATION = 0.05
 categorical_features = ["endpoint", "method"]
 numeric_features = ["payload_size", "response_time", "status_code"]
 
+# ---------------- Globals ----------------
 preprocessor = None
 iso_model = None
+model_lock = threading.Lock()
 
-def train_from_df(df, contamination=CONTAMINATION):
+# ---------------- Helper functions ----------------
+def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
+    """Train Isolation Forest model from a dataframe and save artifacts."""
     global preprocessor, iso_model
     df = df.dropna(subset=categorical_features + numeric_features)
     for col in numeric_features:
@@ -149,121 +156,150 @@ def train_from_df(df, contamination=CONTAMINATION):
     if len(df) == 0:
         print("No usable rows for training.")
         return False
+
+    # Preprocessor
     preprocessor_local = ColumnTransformer([
         ("cat", OneHotEncoder(handle_unknown="ignore", sparse=False), categorical_features),
         ("num", StandardScaler(), numeric_features)
     ])
     X = preprocessor_local.fit_transform(df[categorical_features + numeric_features])
+
+    # Isolation Forest
     iso_local = IsolationForest(n_estimators=200, contamination=contamination, random_state=42)
     iso_local.fit(X)
-    dump(preprocessor_local, PREPROCESSOR_PATH)
-    dump(iso_local, MODEL_PATH)
+
+    # write artifacts atomically
+    tmp_pre = PREPROCESSOR_PATH + ".tmp"
+    tmp_mod = MODEL_PATH + ".tmp"
+    dump(preprocessor_local, tmp_pre)
+    dump(iso_local, tmp_mod)
+    os.replace(tmp_pre, PREPROCESSOR_PATH)
+    os.replace(tmp_mod, MODEL_PATH)
+
     preprocessor = preprocessor_local
     iso_model = iso_local
     print(f"Trained on {len(df)} rows and saved artifacts.")
     return True
 
-def retrain():
+def retrain_model_from_logs(df_bootstrap: pd.DataFrame = None):
+    """Retrain model using logs or optional bootstrap DataFrame."""
+    # If bootstrap dataframe is provided, use it for first-time training
+    if df_bootstrap is not None and not df_bootstrap.empty:
+        train_model_from_dataframe(df_bootstrap)
+        print("Trained from bootstrap DataFrame.")
+        return
+
+    # Use existing logs
     if os.path.exists(HISTORY_LOGS) and os.path.exists(REQUEST_LOGS):
         df_history = pd.read_csv(HISTORY_LOGS)
         df_requests = pd.read_csv(REQUEST_LOGS)
         df_combined = pd.concat([df_history, df_requests], ignore_index=True)
-        train_from_df(df_combined)
+        train_model_from_dataframe(df_combined)
         df_combined.to_csv(HISTORY_LOGS, index=False)
         os.remove(REQUEST_LOGS)
         print("Updated history logs after retraining.")
     elif os.path.exists(HISTORY_LOGS):
-        """THIS IS INCASE OF NO NEW REQUEST LOGS AND  NO MODEL THERE 
-        DUE TO CRASH WHICH MAY RESULT IN NO TRAINING """
         df_history = pd.read_csv(HISTORY_LOGS)
-        train_from_df(df_history)
+        train_model_from_dataframe(df_history)
     elif os.path.exists(REQUEST_LOGS):
-        df3=pd.read_csv(REQUEST_LOGS)
-        train_from_df(df3)
-        df3.to_csv(HISTORY_LOGS,index=False)
+        df_requests = pd.read_csv(REQUEST_LOGS)
+        train_model_from_dataframe(df_requests)
+        df_requests.to_csv(HISTORY_LOGS, index=False)
     else:
         print("No data available to train.")
 
-def maybe_retrain(df):
+def maybe_trigger_retrain(df: pd.DataFrame):
     # helper to check retrain threshold
     if len(df) >= THRESH:
-        retrain()
+        retrain_model_from_logs()
 
-def load_artifacts():
+def load_model_artifacts():
     global preprocessor, iso_model
     # Case 1: Model exists 
     if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
-        # Check agr reqst logs thresh sei upar hai
-        if os.path.exists(REQUEST_LOGS):
-            df2 = pd.read_csv(REQUEST_LOGS)
-            if len(df2) >= THRESH:
-                retrain()
-        # training ke baad model ko load kro
         preprocessor = load(PREPROCESSOR_PATH)
         iso_model = load(MODEL_PATH)
         print("Loaded preprocessor and model.")
         return True
-
-    # Case 2: No model yet
     else:
-        retrain()
-        if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
-            preprocessor = load(PREPROCESSOR_PATH)
-            iso_model = load(MODEL_PATH)
-            return True
-        else:
-            print("Model could not be loaded or trained.")
-            return False
+        print("No model artifacts found.")
+        return False
 
-class RequestData(BaseModel):  
-    endpoint:str
-    method:str
-    payload_size:int
-    response_time:int
-    status_code:int
-
-def prediction(df):
-    global iso_model,preprocessor
-    transformed_df=preprocessor.transform(df)
-    preds=iso_model.predict(transformed_df)
+def predict_anomaly(df: pd.DataFrame):
+    global iso_model, preprocessor
+    if preprocessor is None or iso_model is None:
+        raise RuntimeError("Model artifacts not loaded")
+    cols = categorical_features + numeric_features
+    df = df[cols]
+    for c in numeric_features:
+        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+    transformed = preprocessor.transform(df)
+    preds = iso_model.predict(transformed)
     # Map -1 → 1 (anomaly), 1 → 0 (normal)
-    return [1 if p==-1 else 0 for p in preds]
+    return [1 if p == -1 else 0 for p in preds]
 
-app=FastAPI()
+# ---------------- FastAPI App ----------------
+app = FastAPI()
 app.include_router(document_router)
 app.include_router(query_router)
+
 @app.on_event("startup")
 def startup_event():
-    load_artifacts()  
+    # Load model artifacts at startup if available
+    load_model_artifacts()
 
-@app.get('/')
+@app.get("/")
 def status():
-    global iso_model,preprocessor
-    return {'status':"Running","model_loaded":preprocessor is not None and iso_model is not None}
+    global preprocessor, iso_model
+    return {"status": "Running", "model_loaded": preprocessor is not None and iso_model is not None}
 
+# ---------------- Validate Endpoint ----------------
+class RequestData(BaseModel):
+    endpoint: str
+    method: str
+    payload_size: int
+    response_time: int
+    status_code: int
 
 @app.post('/validate/{user_id}')
-async def predict(user_id:int=Path(...,description="The requester_id path"),
-                  data:RequestData=Body(...,description="Required data for validation"),
-                  verbose:Optional[bool]=Query(False,description="any verbose required")):
-    df_test=pd.DataFrame([data.dict()])
-    is_anomaly=prediction(df_test)
-    df_test["timestamp"]=pd.Timestamp.now()
-    df_test["user"]=user_id
+async def validate_request(user_id: int = Path(..., description="The requester_id path"),
+                           data: RequestData = Body(..., description="Required data for validation"),
+                           verbose: Optional[bool] = Query(False, description="any verbose required")):
+    df_test = pd.DataFrame([data.dict()])
+    is_anomaly = predict_anomaly(df_test)
+    df_test["timestamp"] = pd.Timestamp.now()
+    df_test["user"] = user_id
 
-    # Save or append to request logs
-    if os.path.exists(REQUEST_LOGS):
-        old_df=pd.read_csv(REQUEST_LOGS)
-        full_df=pd.concat([old_df,df_test],ignore_index=True)
-    else:
-        full_df=df_test
+    # Save or append to request logs atomically
+    with model_lock:
+        if os.path.exists(REQUEST_LOGS):
+            old_df = pd.read_csv(REQUEST_LOGS)
+            full_df = pd.concat([old_df, df_test], ignore_index=True)
+        else:
+            full_df = df_test
+        tmp = REQUEST_LOGS + ".tmp"
+        full_df.to_csv(tmp, index=False)
+        os.replace(tmp, REQUEST_LOGS)
 
-    full_df.to_csv(REQUEST_LOGS,index=False) 
-    maybe_retrain(full_df)
+    maybe_trigger_retrain(full_df)
 
-    response={
-        "user_id":user_id,
-        "anomaly":is_anomaly,
-        "data":data.dict()
+    response = {
+        "user_id": user_id,
+        "anomaly": is_anomaly,
+        "data": data.dict()
     }
     return response
+
+# ---------------- Train Endpoint ----------------
+@app.get('/train')
+def train_model():
+    """
+    Developer-only endpoint to train/retrain the model.
+    Always uses logs (REQUEST_LOGS + HISTORY_LOGS). First-time bootstrap not included here,
+    can be done by calling retrain_model_from_logs(df_bootstrap) manually if needed.
+    """
+    with model_lock:
+        retrain_model_from_logs()  # always retrain from logs
+        success = load_model_artifacts()
+    return {"message": "Training/retraining done", "model_loaded": success}
+
