@@ -9,7 +9,7 @@ from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from pydantic import BaseModel, Field
 from typing import Optional
-from API_GATEWAY.misc.enpoint_documentation import document_router
+from enpoint_documentation import document_router
 from query_routing import query_router
 import io  
 
