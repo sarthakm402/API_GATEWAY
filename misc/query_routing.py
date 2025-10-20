@@ -2,7 +2,7 @@ from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.vectorstores import Chroma
-from langchain.embeddings import GoogleGenerativeAIEmbeddings
+from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import pandas as pd
 from fastapi import APIRouter, Body
 import os
@@ -34,7 +34,7 @@ def build_vectorstore(csv_file=QUERY_LOGS):
     return vectorstore
 
 vectorstore = build_vectorstore()
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro")
+llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro",api_key="AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg")
 if vectorstore:
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,

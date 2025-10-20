@@ -1,6 +1,6 @@
 from fastapi import FastAPI, Query, Path, Body
 from fastapi import APIRouter
-from pydantic import Basemodel,Field
+from pydantic import BaseModel,Field
 import os
 import pandas as pd
 # help krega works as a small fastapi app that can be called by main fastapi helps to keep things clean

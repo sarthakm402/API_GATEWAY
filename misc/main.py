@@ -1,5 +1,4 @@
-###### MORE GENERALISED API ANOMALY DETECTION########
-from fastapi import FastAPI, Query, Path, Body, HTTPException, UploadFile, File,Form
+from fastapi import FastAPI, Query, Path, Body, HTTPException, UploadFile, File, Form
 import os
 import threading
 import pandas as pd
@@ -8,10 +7,11 @@ from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
 from pydantic import BaseModel, Field
-from typing import Optional
+from typing import Optional, List, Dict
 from enpoint_documentation import document_router
 from query_routing import query_router
-import io  
+import io
+import json
 
 # ---------------- Paths and constants ----------------
 REQUEST_LOGS = "request.csv"
@@ -43,7 +43,7 @@ def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
 
     # Preprocessor
     preprocessor_local = ColumnTransformer([
-        ("cat", OneHotEncoder(handle_unknown="ignore", sparse=False), categorical_features),
+        ("cat", OneHotEncoder(handle_unknown="ignore", sparse_output=False), categorical_features),
         ("num", StandardScaler(), numeric_features)
     ])
     X = preprocessor_local.fit_transform(df[categorical_features + numeric_features])
@@ -189,26 +189,29 @@ async def validate_request(user_id: int = Path(..., description="The requester_i
 #     return {"message": "Training/retraining done", "model_loaded": success}
 
 @app.post('/train')  
-async def train_model(file: UploadFile = File(None),  # optional CSV upload
-                      data: Optional[list[dict]] = Form(None)):
+async def train_model(file: Optional[UploadFile] = File(None),
+                      data: Optional[str] = Form(None)):
     """
     Developer-only endpoint to train/retrain the model.
     Options:
     1. Upload a CSV file.
-    2. Send a JSON array in the body.
+    2. Send a JSON array in the body (as a string field named 'data' in multipart/form-data).
     3. If neither, retrain from logs (REQUEST_LOGS + HISTORY_LOGS).
     """
     df_bootstrap = None
 
-    # If CSV file uploaded
     if file is not None:
         contents = await file.read()
         df_bootstrap = pd.read_csv(io.StringIO(contents.decode('utf-8')))
         print("Received CSV file for training.")
-
-    # If JSON array sent
     elif data is not None:
-        df_bootstrap = pd.DataFrame(data)
+        try:
+            parsed = json.loads(data)
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=f"Invalid JSON in 'data' field: {str(e)}")
+        if not isinstance(parsed, list):
+            raise HTTPException(status_code=400, detail="'data' must be a JSON array of objects")
+        df_bootstrap = pd.DataFrame(parsed)
         print("Received JSON payload for training.")
 
     with model_lock:
