@@ -1,11 +1,12 @@
-from langchain_google_genai import ChatGoogleGenerativeAI
+from fastapi import APIRouter, Body
+from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.vectorstores import Chroma
-from langchain_google_genai import GoogleGenerativeAIEmbeddings
 import pandas as pd
-from fastapi import APIRouter, Body
 import os
+
+GOOGLE_API_KEY = "AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg"
 
 query_router = APIRouter(
     prefix="/query",
@@ -13,6 +14,7 @@ query_router = APIRouter(
 )
 
 QUERY_LOGS = "request.csv"
+
 def build_vectorstore(csv_file=QUERY_LOGS):
     if not os.path.exists(csv_file):
         return None
@@ -29,23 +31,32 @@ def build_vectorstore(csv_file=QUERY_LOGS):
         for _, row in df.iterrows()
     ]
 
-    embeddings = GoogleGenerativeAIEmbeddings()
+    embeddings = GoogleGenerativeAIEmbeddings(
+        model="models/embedding-001",
+        google_api_key=GOOGLE_API_KEY
+    )
+
     vectorstore = Chroma.from_documents(documents, embeddings)
     return vectorstore
 
 vectorstore = build_vectorstore()
-llm = ChatGoogleGenerativeAI(model="gemini-1.5-pro",api_key="AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg")
+
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-pro",
+    api_key=GOOGLE_API_KEY
+)
+
 if vectorstore:
     qa_chain = RetrievalQA.from_chain_type(
         llm=llm,
-        chain_type="stuff", 
+        chain_type="stuff",
         retriever=vectorstore.as_retriever()
     )
 else:
     qa_chain = None
 
-@query_router.post("/", summary="Query on Logs with normal English")
-async def query(question: str = Body(..., description="Ask a query in English")):
+@query_router.post("/", summary="Query the logs in natural English")
+async def query(question: str = Body(..., description="Ask a question about the logs")):
     if not qa_chain:
         return {"message": "No logs available to query."}
 
