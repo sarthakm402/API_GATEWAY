@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Body
 from langchain_google_genai import ChatGoogleGenerativeAI, GoogleGenerativeAIEmbeddings
+from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain.schema import Document
 from langchain.vectorstores import Chroma
@@ -30,11 +31,8 @@ def build_vectorstore(csv_file=QUERY_LOGS):
         )
         for _, row in df.iterrows()
     ]
-
-    embeddings = GoogleGenerativeAIEmbeddings(
-        model="models/embedding-001",
-        google_api_key=GOOGLE_API_KEY
-    )
+   
+    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
 
     vectorstore = Chroma.from_documents(documents, embeddings)
     return vectorstore
