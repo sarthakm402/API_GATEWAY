@@ -4,7 +4,7 @@ This project implements an **API Gateway** using **FastAPI** that routes incomin
 It also includes query routing, preprocessing, and model inference logic for modular and scalable design.
 
 ---
-
+ 
 ## 🚀 Features
 
 - **FastAPI-powered REST API**
