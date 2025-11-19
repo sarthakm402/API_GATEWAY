@@ -15,7 +15,7 @@ import json
 
 # ---------------- Paths and constants ----------------
 REQUEST_LOGS = "request.csv"
-HISTORY_LOGS = "history.csv"  # if available
+HISTORY_LOGS = "history.csv"  # agr available hai
 PREPROCESSOR_PATH = "preprocessor.joblib"
 MODEL_PATH = "iso_model.joblib"
 THRESH = 100
@@ -111,16 +111,28 @@ def load_model_artifacts():
 
 def predict_anomaly(df: pd.DataFrame):
     global iso_model, preprocessor
-    if preprocessor is None or iso_model is None:
-        raise RuntimeError("Model artifacts not loaded")
-    cols = categorical_features + numeric_features
-    df = df[cols]
-    for c in numeric_features:
-        df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
-    transformed = preprocessor.transform(df)
-    preds = iso_model.predict(transformed)
-    # Map -1 → 1 (anomaly), 1 → 0 (normal)
-    return [1 if p == -1 else 0 for p in preds]
+    try:
+        with model_lock:
+            if preprocessor is None or iso_model is None:
+                raise RuntimeError("Model artifacts not loaded")
+
+            cols = categorical_features + numeric_features
+            missing = [i for i in cols if i not in df.columns]
+            if missing:
+                raise RuntimeError(f"Missing columns that should be there: {missing}")
+
+            for c in numeric_features:
+                df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0)
+
+            transformed = preprocessor.transform(df)
+            preds = iso_model.predict(transformed)
+
+            # Map -1 → 1 (anomaly), 1 → 0 (normal)
+            return [1 if p == -1 else 0 for p in preds]
+
+    except Exception as e:
+        return {"error": str(e)}
+
 
 # ---------------- FastAPI App ----------------
 app = FastAPI()
