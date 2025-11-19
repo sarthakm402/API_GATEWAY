@@ -12,6 +12,8 @@ from enpoint_documentation import document_router
 from query_routing import query_router
 import io
 import json
+import logging
+
 
 # ---------------- Paths and constants ----------------
 REQUEST_LOGS = "request.csv"
@@ -28,6 +30,11 @@ numeric_features = ["payload_size", "response_time", "status_code"]
 preprocessor = None
 iso_model = None
 model_lock = threading.Lock()
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s | %(levelname)s | %(message)s"
+)
+logger=logging.getLogger(__name__)
 
 # ---------------- Helper functions ----------------
 def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
@@ -52,7 +59,7 @@ def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
     iso_local = IsolationForest(n_estimators=200, contamination=contamination, random_state=42)
     iso_local.fit(X)
 
-    # write artifacts atomically
+    # write artifacts locally after training then push to the global path 
     tmp_pre = PREPROCESSOR_PATH + ".tmp"
     tmp_mod = MODEL_PATH + ".tmp"
     dump(preprocessor_local, tmp_pre)
@@ -62,7 +69,7 @@ def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
 
     preprocessor = preprocessor_local
     iso_model = iso_local
-    print(f"Trained on {len(df)} rows and saved artifacts.")
+    logger.info(f"Trained on {len(df)} rows and saved artifacts.")
     return True
 
 def retrain_model_from_logs(df_bootstrap: pd.DataFrame = None):
@@ -70,7 +77,7 @@ def retrain_model_from_logs(df_bootstrap: pd.DataFrame = None):
     # If bootstrap dataframe is provided, use it for first-time training
     if df_bootstrap is not None and not df_bootstrap.empty:
         train_model_from_dataframe(df_bootstrap)
-        print("Trained from bootstrap DataFrame.")
+        logger.info("Trained from bootstrap DataFrame.")
         return
 
     # Use existing logs
@@ -81,7 +88,7 @@ def retrain_model_from_logs(df_bootstrap: pd.DataFrame = None):
         train_model_from_dataframe(df_combined)
         df_combined.to_csv(HISTORY_LOGS, index=False)
         os.remove(REQUEST_LOGS)
-        print("Updated history logs after retraining.")
+        logger.info("Updated history logs after retraining.")
     elif os.path.exists(HISTORY_LOGS):
         df_history = pd.read_csv(HISTORY_LOGS)
         train_model_from_dataframe(df_history)
@@ -90,7 +97,7 @@ def retrain_model_from_logs(df_bootstrap: pd.DataFrame = None):
         train_model_from_dataframe(df_requests)
         df_requests.to_csv(HISTORY_LOGS, index=False)
     else:
-        print("No data available to train.")
+        logger.warning("No data available to train.")
 
 def maybe_trigger_retrain(df: pd.DataFrame):
     # helper to check retrain threshold
@@ -103,10 +110,10 @@ def load_model_artifacts():
     if os.path.exists(PREPROCESSOR_PATH) and os.path.exists(MODEL_PATH):
         preprocessor = load(PREPROCESSOR_PATH)
         iso_model = load(MODEL_PATH)
-        print("Loaded preprocessor and model.")
+        logger.info("Loaded preprocessor and model.")
         return True
     else:
-        print("No model artifacts found.")
+        logger.error("No model artifacts found.")
         return False
 
 def predict_anomaly(df: pd.DataFrame):
@@ -131,7 +138,8 @@ def predict_anomaly(df: pd.DataFrame):
             return [1 if p == -1 else 0 for p in preds]
 
     except Exception as e:
-        return {"error": str(e)}
+        logger.error(f"Prediction failed due to {str(e)} ")
+        return HTTPException(status_code=500,detail=str(e))
 
 
 # ---------------- FastAPI App ----------------
@@ -215,7 +223,7 @@ async def train_model(file: Optional[UploadFile] = File(None),
     if file is not None:
         contents = await file.read()
         df_bootstrap = pd.read_csv(io.StringIO(contents.decode('utf-8')))
-        print("Received CSV file for training.")
+        logger.info("Received CSV file for training.")
     elif data is not None:
         try:
             parsed = json.loads(data)
@@ -224,7 +232,7 @@ async def train_model(file: Optional[UploadFile] = File(None),
         if not isinstance(parsed, list):
             raise HTTPException(status_code=400, detail="'data' must be a JSON array of objects")
         df_bootstrap = pd.DataFrame(parsed)
-        print("Received JSON payload for training.")
+        logger.info("Received JSON payload for training.")
 
     with model_lock:
         retrain_model_from_logs(df_bootstrap)
