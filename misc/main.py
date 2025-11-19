@@ -139,7 +139,7 @@ def predict_anomaly(df: pd.DataFrame):
 
     except Exception as e:
         logger.error(f"Prediction failed due to {str(e)} ")
-        return HTTPException(status_code=500,detail=str(e))
+        return {"Status":"failed","Code":"Prediction error","Detail":str(e)}
 
 
 # ---------------- FastAPI App ----------------
@@ -155,7 +155,7 @@ def startup_event():
 @app.get("/")
 def status():
     global preprocessor, iso_model
-    return {"status": "Running", "model_loaded": preprocessor is not None and iso_model is not None}
+    return {"Status": "Success", "Code":"model loaded" ,"Detail": preprocessor is not None and iso_model is not None}
 
 # ---------------- Validate Endpoint ----------------
 class RequestData(BaseModel):
@@ -212,7 +212,7 @@ async def validate_request(user_id: int = Path(..., description="The requester_i
 async def train_model(file: Optional[UploadFile] = File(None),
                       data: Optional[str] = Form(None)):
     """
-    Developer-only endpoint to train/retrain the model.
+    Developer-only endpoint to train/retrain the model in background.
     Options:
     1. Upload a CSV file.
     2. Send a JSON array in the body (as a string field named 'data' in multipart/form-data).
@@ -234,8 +234,17 @@ async def train_model(file: Optional[UploadFile] = File(None),
         df_bootstrap = pd.DataFrame(parsed)
         logger.info("Received JSON payload for training.")
 
-    with model_lock:
-        retrain_model_from_logs(df_bootstrap)
-        success = load_model_artifacts()
+    def retrain_async(df):
+        try:
+            retrain_model_from_logs(df)
+            with model_lock:
+                load_model_artifacts()
+            logger.info("Background retraining finished successfully.")
+        except Exception as e:
+            logger.error(f"Background retraining failed: {str(e)}")
 
-    return {"message": "Training/retraining done", "model_loaded": success}
+    # retraining in background thread so it aint gonna block the main one 
+    threading.Thread(target=retrain_async, args=(df_bootstrap,), daemon=True).start()
+
+    return {"Status": "Success", "Code": "Training started", "Detail": "Model retraining is running in background."}
+
