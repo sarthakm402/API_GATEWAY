@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Query, Path, Body, HTTPException, UploadFile, File, Form
+from fastapi import FastAPI, Query, Path, Body, HTTPException, UploadFile, File, Form,Header
 import os
 import threading
 import pandas as pd
@@ -189,6 +189,8 @@ async def validate_request(user_id: int = Path(..., description="The requester_i
 
     response = {
         "user_id": user_id,
+        "Status":"Success",
+        "Code":"Prediciton done",
         "anomaly": is_anomaly,
         "data": data.dict()
     }
@@ -209,7 +211,8 @@ async def validate_request(user_id: int = Path(..., description="The requester_i
 #     return {"message": "Training/retraining done", "model_loaded": success}
 
 @app.post('/train')  
-async def train_model(file: Optional[UploadFile] = File(None),
+async def train_model(X_API_KEY=Header(...),
+                      file: Optional[UploadFile] = File(None),
                       data: Optional[str] = Form(None)):
     """
     Developer-only endpoint to train/retrain the model in background.
@@ -217,7 +220,12 @@ async def train_model(file: Optional[UploadFile] = File(None),
     1. Upload a CSV file.
     2. Send a JSON array in the body (as a string field named 'data' in multipart/form-data).
     3. If neither, retrain from logs (REQUEST_LOGS + HISTORY_LOGS).
+
     """
+    secret_key=os.getenv("TRAIN_API_KEY")
+    if secret_key!=X_API_KEY:
+        logger.error("Unauthorised person attempting to train the model")
+        return HTTPException(status_code=402,detail="Unauthorised Access")
     df_bootstrap = None
 
     if file is not None:
@@ -228,9 +236,9 @@ async def train_model(file: Optional[UploadFile] = File(None),
         try:
             parsed = json.loads(data)
         except Exception as e:
-            raise HTTPException(status_code=400, detail=f"Invalid JSON in 'data' field: {str(e)}")
+            return {"Status":"Failed","Code":"Invalid JSON","Details":"Invalid json format"}
         if not isinstance(parsed, list):
-            raise HTTPException(status_code=400, detail="'data' must be a JSON array of objects")
+            return {"Status":"Failed","Code":"Invalid json format","Detail":"'data' must be a JSON array of objects"}
         df_bootstrap = pd.DataFrame(parsed)
         logger.info("Received JSON payload for training.")
 
