@@ -64,12 +64,12 @@ else:
 async def query(question: str = Body(..., description="Ask a question about the logs")):
     if not qa_chain:
         logger.warning("Query attempted but no vectorstore is available.")
-        return {"message": "No logs available to query."}
+        return {"Status":"Fail","Code":"no logs","Detail": "No logs available to query."}
 
     try:
         answer = qa_chain.run(question)
         logger.info(f"Query executed successfully: {question}")
-        return {"question": question, "answer": answer}
+        return {"Status":"Success","Detail":{"question":question, "answer": answer}}
     except Exception as e:
         logger.error(f"Query failed: {str(e)}")
-        return {"error": str(e)}
+        return {"Status":"Fail","Code":"Error","Detail": str(e)}
