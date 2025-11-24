@@ -8,19 +8,30 @@ import pandas as pd
 import os
 import logging
 import time
+import threading
+import shutil
 GOOGLE_API_KEY = "AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg"
 
 query_router = APIRouter(
     prefix="/query",
     tags=["query"]
 )
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
 logger=logging.getLogger(__name__)
 QUERY_LOGS = "request.csv"
-
+llm = ChatGoogleGenerativeAI(
+    model="gemini-1.5-pro",
+    api_key=GOOGLE_API_KEY
+)
+vectorstore=None
+qa_chain=None
+ttl= 3600 
+last_loaded_time=None
+vec_lock=threading.Lock()
 def build_vectorstore(csv_file=QUERY_LOGS):
     if not os.path.exists(csv_file):
         logger.warning(f"No csv file found at {csv_file}")
@@ -40,26 +51,31 @@ def build_vectorstore(csv_file=QUERY_LOGS):
     ]
    
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
-
-    vectorstore = Chroma.from_documents(documents, embeddings)
+    with vec_lock:
+     vectorstore = Chroma.from_documents(documents, embeddings,persist_directory="vectorstore_db")
+     vectorstore.persist()
+    
     logger.info("Vectorstore has been created")
     return vectorstore
-
-llm = ChatGoogleGenerativeAI(
-    model="gemini-1.5-pro",
-    api_key=GOOGLE_API_KEY
-)
-vectorstore=None
-qa_chain=None
-ttl= 3600 
-last_loaded_time=None
+def load_vectorstore():
+    if os.pathExists("vectorstore_db"):
+        global embeddings
+        try:
+         return Chroma(
+             persist_directory="vectorstore_db",
+             embedding_function=embeddings
+            )
+        except Exception as e:
+            logger.warning(f"No vectorstore loaded due to {str(e)}")
+            return None
 def ensure_vectorstore_loaded():
     global vectorstore,qa_chain,last_loaded_time
     if vectorstore and qa_chain and time.time()-last_loaded_time<ttl:
         logger.info("Vectorstore and qa_chain already loaded skipping rebuild")
         return
-    
-    vectorstore=build_vectorstore()
+    vectorstore=load_vectorstore()
+    if not vectorstore:
+     vectorstore=build_vectorstore()
     if vectorstore is None:
         logger.warning("vector store build failed please checks whetehr logs available")
         return
@@ -85,7 +101,10 @@ async def query(question: str = Body(..., description="Ask a question about the 
 @query_router.post("/refresh",summary="for emergency refresh of vectorstore")
 async def manual_refresh():
     global vectorstore,qa_chain,last_loaded_time
-    vectorstore = build_vectorstore()
+    with vec_lock:
+     if os.path.exists("vectorstore_db"):
+            shutil.rmtree("vectorstore_db")
+     vectorstore = build_vectorstore()
     if not vectorstore:
         return {"Status": "Failed", "Detail": "Build failed"}
     qa_chain = RetrievalQA.from_chain_type(
