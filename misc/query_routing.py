@@ -43,11 +43,15 @@ def build_vectorstore(csv_file=QUERY_LOGS):
         return None
 
     documents = [
-        Document(
-            page_content=str(row.to_dict()),
-            metadata={"timestamp": row.get("timestamp"), "user_id": row.get("user_id")}
+     Document(
+         page_content=(
+           f"API endpoint {row['endpoint']} was called using {row['method']} method. "
+           f"Payload size was {row['payload_size']} KB. "
+           f"It responded in {row['response_time']} ms and returned status {row['status_code']}."
+         ),
+         metadata={"timestamp": row.get("timestamp")}
         )
-        for _, row in df.iterrows()
+     for _,row in df.iterrows()
     ]
    
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
