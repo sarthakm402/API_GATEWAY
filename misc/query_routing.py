@@ -44,29 +44,33 @@ def build_vectorstore(csv_file=QUERY_LOGS):
     logger.info("Vectorstore has been created")
     return vectorstore
 
-vectorstore = build_vectorstore()
-
 llm = ChatGoogleGenerativeAI(
     model="gemini-1.5-pro",
     api_key=GOOGLE_API_KEY
 )
-
-if vectorstore:
-    qa_chain = RetrievalQA.from_chain_type(
+vectorstore=None
+qa_chain=None
+def ensure_vectorstore_loaded():
+    global vectorstore,qa_chain
+    if vectorstore and qa_chain:
+        logger.info("Vectorstore and qa_chain already loaded skipping rebuild")
+        return
+    
+    vectorstore=build_vectorstore()
+    if vectorstore is None:
+        logger.warning("vector store build failed please checks whetehr logs available")
+        return
+    qa_chain=RetrievalQA.from_chain_type(
         llm=llm,
         chain_type="stuff",
         retriever=vectorstore.as_retriever()
     )
-else:
-    logger.error("No vectorstore present")
-    qa_chain = None
-
+    logger.info("QA chain successfully initialised")
 @query_router.post("/", summary="Query the logs in natural English")
 async def query(question: str = Body(..., description="Ask a question about the logs")):
-    if not qa_chain:
-        logger.error("No QA retrieval chain found")
-        return {"Status":"Failed","Code":"Invalid Logs","Detail": "No logs available to query."}
-
+    ensure_vectorstore_loaded()
+    if qa_chain is None:
+        return{"Status":"Failed","Code":"logs empty","Detail":"No logs available to query "}
     try:
         answer = qa_chain.run(question)
         logger.info("qa chain successful")
