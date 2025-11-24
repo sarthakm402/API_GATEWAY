@@ -7,6 +7,7 @@ from langchain.vectorstores import Chroma
 import pandas as pd
 import os
 import logging
+import time
 GOOGLE_API_KEY = "AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg"
 
 query_router = APIRouter(
@@ -50,9 +51,11 @@ llm = ChatGoogleGenerativeAI(
 )
 vectorstore=None
 qa_chain=None
+ttl= 3600 
+last_loaded_time=None
 def ensure_vectorstore_loaded():
-    global vectorstore,qa_chain
-    if vectorstore and qa_chain:
+    global vectorstore,qa_chain,last_loaded_time
+    if vectorstore and qa_chain and time.time()-last_loaded_time<ttl:
         logger.info("Vectorstore and qa_chain already loaded skipping rebuild")
         return
     
@@ -65,6 +68,7 @@ def ensure_vectorstore_loaded():
         chain_type="stuff",
         retriever=vectorstore.as_retriever()
     )
+    last_loaded_time=time.time()
     logger.info("QA chain successfully initialised")
 @query_router.post("/", summary="Query the logs in natural English")
 async def query(question: str = Body(..., description="Ask a question about the logs")):
@@ -78,3 +82,18 @@ async def query(question: str = Body(..., description="Ask a question about the 
     except Exception as e:
         logger.warning(f"Error occured {str(e)}")
         return {"Status":"Failed","Code":"Error","Detail": str(e)}
+@query_router.post("/refresh",summary="for emergency refresh of vectorstore")
+async def manual_refresh():
+    global vectorstore,qa_chain,last_loaded_time
+    vectorstore = build_vectorstore()
+    if not vectorstore:
+        return {"Status": "Failed", "Detail": "Build failed"}
+    qa_chain = RetrievalQA.from_chain_type(
+        llm=llm,
+        chain_type="stuff",
+        retriever=vectorstore.as_retriever()
+    )
+    last_loaded_time = time.time()
+    return {"Status": "Success", "Detail": "Vectorstore manually refreshed!"}
+
+
