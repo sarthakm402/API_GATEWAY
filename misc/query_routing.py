@@ -17,17 +17,17 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s | %(levelname)s | %(message)s"
 )
-logger=logging.getlogger(__name__)
+logger=logging.getLogger(__name__)
 QUERY_LOGS = "request.csv"
 
 def build_vectorstore(csv_file=QUERY_LOGS):
     if not os.path.exists(csv_file):
-        logger.warning(f"Query logs file {csv_file} not found.")
+        logger.warning(f"No csv file found at {csv_file}")
         return None
 
     df = pd.read_csv(csv_file)
     if df.empty:
-        logger.warning(f"Query logs file {csv_file} is empty.")
+        logger.warning("The csv file is empty")
         return None
 
     documents = [
@@ -41,7 +41,7 @@ def build_vectorstore(csv_file=QUERY_LOGS):
     embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
 
     vectorstore = Chroma.from_documents(documents, embeddings)
-    logger.info(f"Vectorstore built with {len(documents)} documents.")
+    logger.info("Vectorstore has been created")
     return vectorstore
 
 vectorstore = build_vectorstore()
@@ -58,18 +58,19 @@ if vectorstore:
         retriever=vectorstore.as_retriever()
     )
 else:
+    logger.error("No vectorstore present")
     qa_chain = None
 
 @query_router.post("/", summary="Query the logs in natural English")
 async def query(question: str = Body(..., description="Ask a question about the logs")):
     if not qa_chain:
-        logger.warning("Query attempted but no vectorstore is available.")
-        return {"Status":"Fail","Code":"no logs","Detail": "No logs available to query."}
+        logger.error("No QA retrieval chain found")
+        return {"Status":"Failed","Code":"Invalid Logs","Detail": "No logs available to query."}
 
     try:
         answer = qa_chain.run(question)
-        logger.info(f"Query executed successfully: {question}")
-        return {"Status":"Success","Detail":{"question":question, "answer": answer}}
+        logger.info("qa chain successful")
+        return {"Status": "Success","Detail":{"question": question, "answer": answer}}
     except Exception as e:
-        logger.error(f"Query failed: {str(e)}")
-        return {"Status":"Fail","Code":"Error","Detail": str(e)}
+        logger.warning(f"Error occured {str(e)}")
+        return {"Status":"Failed","Code":"Error","Detail": str(e)}
