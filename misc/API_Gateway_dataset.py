@@ -5,7 +5,7 @@ n=50000
 df=pd.DataFrame({
 "endpoint":np.random.choice(["/login","/purchase","/get-user","/matrics"],n),
 "method":np.random.choice(["GET","POST"],n),
-"payload_size":np.random.randint(50,2000,n), 
+"payload_size":np.random.randint(50,2000,n),  
 "response_time":np.random.randint(50,5000,n),
 "status_code":np.random.choice([200,400,401,404,500],n,p=[0.9,0.02,0.02,0.03,0.03])
 }) 
