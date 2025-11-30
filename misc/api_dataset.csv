@@ -3,7 +3,7 @@ endpoint,method,payload_size,response_time,status_code
 /matrics,GET,681,1926,200
 /purchase,GET,1120,2022,200
 /get-user,GET,1421,461,200
-/login,GET,261,2376,200
+/login,GET,261,2376,200 
 /get-user,POST,687,1944,200
 /login,GET,1088,3384,200
 /matrics,POST,1362,2484,200
