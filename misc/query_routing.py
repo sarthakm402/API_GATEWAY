@@ -29,10 +29,10 @@ llm = ChatGoogleGenerativeAI(
 )
 vectorstore=None
 qa_chain=None
-ttl= 3600 
-last_loaded_time=None
 vec_lock=threading.Lock()
+embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
 def build_vectorstore(csv_file=QUERY_LOGS):
+    global embeddings
     if not os.path.exists(csv_file):
         logger.warning(f"No csv file found at {csv_file}")
         return None
@@ -53,8 +53,6 @@ def build_vectorstore(csv_file=QUERY_LOGS):
         )
      for _,row in df.iterrows()
     ]
-   
-    embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2") 
     with vec_lock:
      vectorstore = Chroma.from_documents(documents, embeddings,persist_directory="vectorstore_db")
      vectorstore.persist()
@@ -62,7 +60,7 @@ def build_vectorstore(csv_file=QUERY_LOGS):
     logger.info("Vectorstore has been created")
     return vectorstore
 def load_vectorstore():
-    if os.pathExists("vectorstore_db"):
+    if os.path.exists("vectorstore_db"):
         global embeddings
         try:
          return Chroma(
@@ -74,7 +72,7 @@ def load_vectorstore():
             return None
 def ensure_vectorstore_loaded():
     global vectorstore,qa_chain,last_loaded_time
-    if vectorstore and qa_chain and time.time()-last_loaded_time<ttl:
+    if vectorstore and qa_chain:
         logger.info("Vectorstore and qa_chain already loaded skipping rebuild")
         return
     vectorstore=load_vectorstore()
@@ -116,7 +114,6 @@ async def manual_refresh():
         chain_type="stuff",
         retriever=vectorstore.as_retriever()
     )
-    last_loaded_time = time.time()
     return {"Status": "Success", "Detail": "Vectorstore manually refreshed!"}
 
 
