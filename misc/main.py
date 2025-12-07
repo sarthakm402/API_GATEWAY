@@ -2,7 +2,7 @@ from fastapi import FastAPI, Query, Path, Body, HTTPException, UploadFile, File,
 import os
 import threading
 import pandas as pd
-from joblib import dump, load
+from joblib import dump, load 
 from sklearn.ensemble import IsolationForest
 from sklearn.preprocessing import OneHotEncoder, StandardScaler
 from sklearn.compose import ColumnTransformer
