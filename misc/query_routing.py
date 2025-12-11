@@ -19,7 +19,7 @@ GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBDopiFyq_IpE6WT3vaHoV6c
 QUERY_LOGS = "request.csv"
 VECTORSTORE_DIR = "vectorstore_db"
 
-DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "models/text-bison-001")
+DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-1.0-flash")
 
 query_router = APIRouter(
     prefix="/query",
