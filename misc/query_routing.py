@@ -15,11 +15,11 @@ from typing import Optional, List
 
 
  
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyBDopiFyq_IpE6WT3vaHoV6cV8pByUUHIg")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyAavWKs0rwaaMap84Di88zrLbnWdygwwqY")
 QUERY_LOGS = "request.csv"
 VECTORSTORE_DIR = "vectorstore_db"
 
-DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-1.0-flash")
+DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
 
 query_router = APIRouter(
     prefix="/query",
@@ -36,7 +36,7 @@ def make_llm(model_name: str | None = None):
     m = model_name or DEFAULT_MODEL
     return ChatGoogleGenerativeAI(model=m, api_key=GOOGLE_API_KEY)
 
-llm = make_llm(os.environ.get("GOOGLE_GENAI_PRIMARY", "gemini-1.5-pro"))
+llm = make_llm(os.environ.get("GOOGLE_GENAI_PRIMARY", "gemini-2.5-flash"))
 
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
 
