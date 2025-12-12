@@ -1,3 +1,10 @@
+import os
+import time
+import shutil
+import threading
+import asyncio
+import pandas as pd
+from typing import Optional, List
 from fastapi import APIRouter, Body
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_huggingface import HuggingFaceEmbeddings
@@ -5,59 +12,25 @@ from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 
-import pandas as pd
-import os
-import logging
-import time
-import threading
-import shutil
-from typing import Optional, List
-
-
- 
 GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyAavWKs0rwaaMap84Di88zrLbnWdygwwqY")
 QUERY_LOGS = "request.csv"
 VECTORSTORE_DIR = "vectorstore_db"
-
 DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
 
-query_router = APIRouter(
-    prefix="/query",
-    tags=["query"]
-)
+query_router = APIRouter(prefix="/query", tags=["query"])
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(message)s"
-)
-logger = logging.getLogger(__name__)
-
-def make_llm(model_name: str | None = None):
-    m = model_name or DEFAULT_MODEL
-    return ChatGoogleGenerativeAI(model=m, api_key=GOOGLE_API_KEY)
-
-llm = make_llm(os.environ.get("GOOGLE_GENAI_PRIMARY", "gemini-2.5-flash"))
-
+llm = ChatGoogleGenerativeAI(model=os.environ.get("GOOGLE_GENAI_PRIMARY", "gemini-2.5-flash"), api_key=GOOGLE_API_KEY)
 embeddings = HuggingFaceEmbeddings(model_name="sentence-transformers/all-MiniLM-L6-v2")
-
 vectorstore: Optional[Chroma] = None
-vec_lock = threading.Lock()
+async_lock = asyncio.Lock()
 last_loaded_time: Optional[float] = None
 
-
- 
-
 def build_vectorstore(csv_file=QUERY_LOGS) -> Optional[Chroma]:
-    """Build Chroma DB from request.csv logs."""
     if not os.path.exists(csv_file):
-        logger.warning(f"No CSV found: {csv_file}")
         return None
-
     df = pd.read_csv(csv_file)
     if df.empty:
-        logger.warning("CSV file is empty.")
         return None
-
     documents: List[Document] = []
     for _, row in df.iterrows():
         content = (
@@ -67,144 +40,81 @@ def build_vectorstore(csv_file=QUERY_LOGS) -> Optional[Chroma]:
             f"Status code: {row.get('status_code', '?')}."
         )
         documents.append(Document(page_content=content, metadata={"timestamp": row.get("timestamp")}))
-
-    with vec_lock:
-        vs = Chroma.from_documents(
-            documents=documents,
-            embedding=embeddings,
-            persist_directory=VECTORSTORE_DIR
-        )
-        try:
-            vs.persist()
-        except Exception:
-            pass
-
-    logger.info("Vectorstore created successfully.")
+    vs = Chroma.from_documents(documents=documents, embedding=embeddings, persist_directory=VECTORSTORE_DIR)
+    try:
+        vs.persist()
+    except Exception:
+        pass
     return vs
 
-
 def load_vectorstore() -> Optional[Chroma]:
-    """Load existing vectorstore."""
     if os.path.exists(VECTORSTORE_DIR):
         try:
-            return Chroma(
-                persist_directory=VECTORSTORE_DIR,
-                embedding_function=embeddings
-            )
-        except Exception as e:
-            logger.warning(f"Failed to load vectorstore: {e}")
+            return Chroma(persist_directory=VECTORSTORE_DIR, embedding_function=embeddings)
+        except Exception:
+            return None
     return None
 
-
-def ensure_vectorstore_loaded():
-    """Lazy load vectorstore when first query is made."""
+async def ensure_vectorstore_loaded():
     global vectorstore, last_loaded_time
+    async with async_lock:
+        if vectorstore is not None:
+            return
+        loop = asyncio.get_running_loop()
+        vs = await loop.run_in_executor(None, load_vectorstore)
+        if not vs:
+            vs = await loop.run_in_executor(None, build_vectorstore)
+        vectorstore = vs
+        last_loaded_time = time.time()
 
-    if vectorstore is not None:
-        return
-
-    vs = load_vectorstore()
-    if not vs:
-        vs = build_vectorstore()
-    if not vs:
-        logger.warning("Vectorstore build failed.")
-        return
-
-    vectorstore = vs
-    last_loaded_time = time.time()
-    logger.info("Vectorstore loaded and ready.")
-
-
- 
-
-def run_query(question: str, top_k: int = 4) -> str:
-    """Run a natural-language query over log vectorstore."""
-    ensure_vectorstore_loaded()
-
+async def run_query(question: str, top_k: int = 4) -> str:
+    await ensure_vectorstore_loaded()
     if vectorstore is None:
         raise RuntimeError("Vectorstore unavailable")
-
     retriever = vectorstore.as_retriever(search_kwargs={"k": top_k})
-
     try:
         docs = retriever.invoke(question)
     except Exception as e:
         raise RuntimeError(f"Retriever failed: {e}")
-
     if not docs:
         return "No relevant logs found."
-
     context = "\n\n".join([d.page_content for d in docs])
-
     prompt = ChatPromptTemplate.from_messages([
         ("system", "You answer ONLY from the context. If not in context, say 'I don't know.'"),
         ("user", "Context:\n{context}\n\nQuestion:\n{input}\n\nAnswer:")
     ])
-
     formatted = prompt.format_prompt(context=context, input=question)
-
     try:
         messages = formatted.to_messages()
     except:
         messages = str(formatted)
-
     if hasattr(llm, "invoke"):
         try:
             res = llm.invoke(messages)
             return getattr(res, "content", str(res))
-        except Exception as e:
-            logger.warning(f"Primary model failed: {e}")
-            
-            try:
-                fallback_llm = make_llm()
-                logger.info(f"Retrying with fallback model: {DEFAULT_MODEL}")
-                res = fallback_llm.invoke(messages)
-                return getattr(res, "content", str(res))
-            except Exception as e2:
-                logger.error(f"Fallback model also failed: {e2}")
-                raise
-
-    
+        except:
+            fallback_llm = ChatGoogleGenerativeAI(model=DEFAULT_MODEL, api_key=GOOGLE_API_KEY)
+            res = fallback_llm.invoke(messages)
+            return getattr(res, "content", str(res))
     return str(llm(messages))
-
-
- 
 
 @query_router.post("/", summary="Query logs in natural English")
 async def query_endpoint(question: str = Body(..., example="Which endpoint had the longest response time?")):
-    """
-    Usage:
-    POST /query/
-    Body (raw string):
-        "Which endpoint was slow?"
-    """
-    try:
-        answer = run_query(question)
-        return {
-            "Status": "Success",
-            "Detail": {
-                "question": question,
-                "answer": answer
-            }
-        }
-    except Exception as e:
-        logger.warning(f"Error: {e}")
-        return {"Status": "Failed", "Detail": str(e)}
-
+    answer = await run_query(question)
+    return {"Status": "Success", "Detail": {"question": question, "answer": answer}}
 
 @query_router.post("/refresh", summary="Emergency refresh of vectorstore")
 async def manual_refresh():
-    """Delete old DB and rebuild."""
     global vectorstore, last_loaded_time
-
-    with vec_lock:
-        if os.path.exists(VECTORSTORE_DIR):
-            shutil.rmtree(VECTORSTORE_DIR)
-
-        vectorstore = build_vectorstore()
-
-    if not vectorstore:
-        return {"Status": "Failed", "Detail": "Build failed"}
-
-    last_loaded_time = time.time()
+    async with async_lock:
+        loop = asyncio.get_running_loop()
+        def refresh_blocking():
+            if os.path.exists(VECTORSTORE_DIR):
+                shutil.rmtree(VECTORSTORE_DIR)
+            return build_vectorstore()
+        vectorstore_result = await loop.run_in_executor(None, refresh_blocking)
+        if not vectorstore_result:
+            return {"Status": "Failed", "Detail": "Build failed"}
+        vectorstore = vectorstore_result
+        last_loaded_time = time.time()
     return {"Status": "Success", "Detail": "Vectorstore refreshed!"}
