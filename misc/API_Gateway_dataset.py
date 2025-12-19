@@ -3,7 +3,7 @@ import numpy as np
 np.random.seed(32)    
 n=50000     
 df=pd.DataFrame({
-"endpoint":np.random.choice(["/login","/purchase","/get-user","/matrics"],n), 
+"endpoint":np.random.choice(["/login","/purchase","/get-user","/matrics"],n),  
 "method":np.random.choice(["GET","POST"],n), 
 "payload_size":np.random.randint(50,2000,n),    
 "response_time":np.random.randint(50,5000,n),
