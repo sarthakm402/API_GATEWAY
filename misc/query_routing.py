@@ -12,7 +12,7 @@ from langchain_core.documents import Document
 from langchain_chroma import Chroma
 from langchain_core.prompts import ChatPromptTemplate
 
-GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "AIzaSyAavWKs0rwaaMap84Di88zrLbnWdygwwqY")
+GOOGLE_API_KEY = os.environ.get("GOOGLE_API_KEY", "your api key")
 QUERY_LOGS = "request.csv"
 VECTORSTORE_DIR = "vectorstore_db"
 DEFAULT_MODEL = os.environ.get("GOOGLE_GENAI_MODEL", "gemini-2.5-flash")
