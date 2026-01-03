@@ -1,7 +1,7 @@
 # FastAPI Model Gateway
 
 This project implements an **API Gateway** using **FastAPI** that routes incoming requests to different ML models or processing endpoints.  
-It also includes query routing, preprocessing, and model inference logic for modular and scalable design.
+It also includes query routing, preprocessing, and model inference logic for modular and scalable design. 
 
 ---
  
