@@ -11,7 +11,7 @@ endpoint,method,payload_size,response_time,status_code
 /matrics,GET,1564,3915,200
 /get-user,GET,26400,22455,200
 /purchase,GET,1139,4227,200
-/matrics,POST,564,4166,200
+/matrics,POST,564,4166,200 
 /purchase,GET,1950,2120,200
 /get-user,POST,1016,703,200
 /purchase,GET,1868,3572,200
