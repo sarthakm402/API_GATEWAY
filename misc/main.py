@@ -15,7 +15,7 @@ import json
 import logging
 
 
-# ---------------- Paths and constants ----------------
+#  Paths 
 REQUEST_LOGS = "request.csv"
 HISTORY_LOGS = "history.csv"  # agr available hai
 PREPROCESSOR_PATH = "preprocessor.joblib"
@@ -26,7 +26,7 @@ CONTAMINATION = 0.05
 categorical_features = ["endpoint", "method"]
 numeric_features = ["payload_size", "response_time", "status_code"]
 
-# ---------------- Globals ----------------
+#  Globals 
 preprocessor = None
 iso_model = None
 model_lock = threading.Lock()
@@ -36,7 +36,7 @@ logging.basicConfig(
 )
 logger=logging.getLogger(__name__)
 
-# ---------------- Helper functions ----------------
+#  Helper functions
 def train_model_from_dataframe(df: pd.DataFrame, contamination=CONTAMINATION):
     """Train Isolation Forest model from a dataframe and save artifacts."""
     global preprocessor, iso_model
@@ -142,7 +142,7 @@ def predict_anomaly(df: pd.DataFrame):
         return {"Status":"failed","Code":"Prediction error","Detail":str(e)}
 
 
-# ---------------- FastAPI App ----------------
+#  FastAPI App 
 app = FastAPI()
 app.include_router(document_router)
 app.include_router(query_router)
@@ -157,7 +157,7 @@ def status():
     global preprocessor, iso_model
     return {"Status": "Success", "Code":"model loaded" ,"Detail": preprocessor is not None and iso_model is not None}
 
-# ---------------- Validate Endpoint ----------------
+#  Validate Endpoint 
 class RequestData(BaseModel):
     endpoint: str
     method: str
