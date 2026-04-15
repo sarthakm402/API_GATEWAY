@@ -6,7 +6,7 @@ It also includes query routing, preprocessing, and model inference logic for mod
 ---
  
 ## 🚀 Features 
-
+ 
 - **FastAPI-powered REST API**
 - **Query Routing Layer** for directing requests to appropriate models
 - **IsolationForest-based Anomaly Detection**
